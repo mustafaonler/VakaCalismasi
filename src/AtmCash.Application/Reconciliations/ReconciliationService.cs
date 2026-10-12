@@ -1,5 +1,6 @@
 using AtmCash.Application.Abstractions;
 using AtmCash.Application.Atms;
+using AtmCash.Application.Common;
 using AtmCash.Domain.Cash;
 using AtmCash.Domain.Common;
 using AtmCash.Domain.Reconciliations;
@@ -84,11 +85,11 @@ internal static class ReconciliationMapping
         r.CreatedAt,
         r.ApprovedBy,
         r.ApprovedAt,
-        r.TotalDifferenceTry,
-        Reconciliation.ApprovalThresholdTry,
+        Money.Round(r.TotalDifferenceTry),
+        Money.Round(Reconciliation.ApprovalThresholdTry),
         r.Lines
             .OrderBy(l => l.Slot).ThenBy(l => l.Currency).ThenByDescending(l => l.Denomination)
             .Select(l => new ReconciliationLineDto(
-                l.Slot, l.Currency, l.Denomination, l.Expected, l.Counted, l.Difference, l.DifferenceTry))
+                l.Slot, l.Currency, l.Denomination, l.Expected, l.Counted, l.Difference, Money.Round(l.DifferenceTry)))
             .ToList());
 }

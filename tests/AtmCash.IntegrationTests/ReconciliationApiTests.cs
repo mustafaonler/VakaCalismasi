@@ -106,6 +106,21 @@ public sealed class ReconciliationApiTests(ApiFactory factory)
     }
 
     [Fact]
+    public async Task Try_amounts_are_returned_with_two_decimals()
+    {
+        var atm = await AtmInMaintenanceAsync();
+
+        // 1 x USD 100 missing: 100 x the seeded USD rate, computed with six-decimal rates.
+        var response = await ReconcileAsync(atm.Id, "ayse", 50, 20, 10, 4);
+        var json = await response.Content.ReadAsStringAsync();
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        Assert.Matches("\"totalDifferenceTry\":\\d+\\.\\d{2}[,}]", json);
+        Assert.Contains("\"approvalThresholdTry\":1000.00", json, StringComparison.Ordinal);
+        Assert.Matches("\"differenceTry\":-\\d+\\.\\d{2}[,}]", json);
+    }
+
+    [Fact]
     public async Task Reconciliation_is_rejected_outside_maintenance()
     {
         var atm = await _client.InServiceAtmAsync(("TRY 100", 50), ("TRY 50", 20), ("TRY 20", 10), ("USD 100", 5));
