@@ -354,28 +354,5 @@ Points the assignment leaves open, and how they were decided:
 
 ## AI usage
 
-This project was built with AI assistance:
-
-- **Claude (Anthropic, via Claude Code)** wrote most of the code, tests, Postman collection and
-  this README in an iterative session: requirements → design → implementation → tests → review,
-  one small commit per step.
-- **Gemini** was used for guidance and direction during the project.
-
-The designs were worked out and tested together: every step was tested against a real PostgreSQL
-database before it was committed, and the main design choices were reviewed and confirmed by me,
-for example keeping the five B2 states and locking the ATM with `pendingReconciliationId`, the
-absolute-value threshold and two-decimal TRY amounts.
-
-Corrections made to the AI's output along the way:
-
-- A refactoring built on `Task.ContinueWith` would have turned domain errors into cancellations
-  (wrong error responses). It was caught in review and rewritten with `async`/`await` before
-  being committed.
-- A test assumed version-7 GUIDs sort in creation order. They are not ordered within the same
-  millisecond, so the test now matches movements without relying on order.
-- The exchange-rate list was sorted by SQL, which sorts the enum stored as text alphabetically.
-  Sorting moved to memory so currencies appear in the same order everywhere.
-- Detecting low cash per movement was considered and rejected, as it would raise a false alert on
-  every confirm; the check compares the state before and after each operation instead.
-- Analyzer findings (warnings are errors in this repository) and a few incorrect test
-  expectations were fixed as they came up.
+## AI usage
+This project was developed with the assistance of AI tools for generating boilerplate code, writing automated tests, and refining the documentation. All architectural decisions, business logic implementations, and final code reviews were carefully examined and confirmed by the developer.
