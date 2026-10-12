@@ -3,6 +3,7 @@ using AtmCash.Application.Abstractions;
 using AtmCash.Application.Withdrawals;
 using AtmCash.Domain.Atms;
 using AtmCash.Domain.Cash;
+using AtmCash.Domain.Reconciliations;
 using AtmCash.Domain.Withdrawals;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,6 +19,10 @@ public sealed class AtmDbContext(DbContextOptions<AtmDbContext> options, TimePro
     public DbSet<WithdrawalQuote> Quotes => Set<WithdrawalQuote>();
 
     public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
+
+    public DbSet<Reconciliation> Reconciliations => Set<Reconciliation>();
+
+    public DbSet<ExchangeRate> ExchangeRates => Set<ExchangeRate>();
 
     public Task LockAtmAsync(Guid atmId, CancellationToken cancellationToken) =>
         Database.ExecuteSqlAsync($"SELECT 1 FROM atms WHERE id = {atmId} FOR UPDATE", cancellationToken);
@@ -53,6 +58,7 @@ public sealed class AtmDbContext(DbContextOptions<AtmDbContext> options, TimePro
         configurationBuilder.Properties<MovementType>().HaveConversion<string>().HaveMaxLength(32);
         configurationBuilder.Properties<QuoteStatus>().HaveConversion<string>().HaveMaxLength(16);
         configurationBuilder.Properties<QuoteOption>().HaveConversion<string>().HaveMaxLength(16);
+        configurationBuilder.Properties<ReconciliationStatus>().HaveConversion<string>().HaveMaxLength(32);
     }
 
     /// <summary>Moves ledger entries raised by aggregates into the same unit of work.</summary>

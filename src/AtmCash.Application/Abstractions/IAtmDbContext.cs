@@ -1,5 +1,7 @@
 using AtmCash.Application.Withdrawals;
 using AtmCash.Domain.Atms;
+using AtmCash.Domain.Cash;
+using AtmCash.Domain.Reconciliations;
 using AtmCash.Domain.Withdrawals;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -15,6 +17,10 @@ public interface IAtmDbContext
     DbSet<WithdrawalQuote> Quotes { get; }
 
     DbSet<IdempotencyRecord> IdempotencyRecords { get; }
+
+    DbSet<Reconciliation> Reconciliations { get; }
+
+    DbSet<ExchangeRate> ExchangeRates { get; }
 
     DatabaseFacade Database { get; }
 

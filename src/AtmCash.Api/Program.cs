@@ -50,6 +50,7 @@ app.MapHealthChecks("/health");
 app.MapAtmEndpoints();
 app.MapWithdrawalEndpoints();
 app.MapDepositEndpoints();
+app.MapReconciliationEndpoints();
 
 await app.RunAsync();
 

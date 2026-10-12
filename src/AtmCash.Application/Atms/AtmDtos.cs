@@ -5,13 +5,17 @@ namespace AtmCash.Application.Atms;
 
 public sealed record AtmSummaryDto(Guid Id, string Code, AtmStatus Status);
 
-/// <summary>Current contents of an ATM: every cassette plus note counts and balance per currency (Part A #12).</summary>
+/// <summary>
+/// Current contents of an ATM: every cassette plus note counts and balance per currency (Part A #12).
+/// <c>PendingReconciliationId</c> is set while a reconciliation awaits four-eyes approval (B9).
+/// </summary>
 public sealed record AtmDetailsDto(
     Guid Id,
     string Code,
     AtmStatus Status,
     IReadOnlyList<CassetteDto> Cassettes,
-    IReadOnlyList<CurrencyBalanceDto> Balances);
+    IReadOnlyList<CurrencyBalanceDto> Balances,
+    Guid? PendingReconciliationId);
 
 public sealed record CassetteDto(
     int Slot,
@@ -75,6 +79,6 @@ internal static class AtmMapping
             })
             .ToList();
 
-        return new AtmDetailsDto(atm.Id, atm.Code, atm.Status, cassettes, balances);
+        return new AtmDetailsDto(atm.Id, atm.Code, atm.Status, cassettes, balances, atm.PendingReconciliationId);
     }
 }
