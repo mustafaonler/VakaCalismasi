@@ -1,4 +1,5 @@
 using AtmCash.Application.Atms;
+using AtmCash.Application.Deposits;
 using AtmCash.Application.Withdrawals;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -10,6 +11,7 @@ public static class DependencyInjection
     {
         services.AddScoped<AtmService>();
         services.AddScoped<WithdrawalService>();
+        services.AddScoped<DepositService>();
         return services;
     }
 }

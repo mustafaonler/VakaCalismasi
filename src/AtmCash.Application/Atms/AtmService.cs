@@ -73,17 +73,13 @@ public sealed class AtmService(IAtmDbContext db, TimeProvider timeProvider)
             },
             cancellationToken);
 
-    /// <summary>Runs a change on one ATM inside a transaction that holds the ATM's row lock.</summary>
-    private async Task<AtmDetailsDto> MutateAsync(Guid atmId, Func<Atm, Task> change, CancellationToken cancellationToken)
-    {
-        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
-        await db.LockAtmAsync(atmId, cancellationToken);
-        var atm = await db.LoadAtmAsync(atmId, tracking: true, cancellationToken);
-
-        await change(atm);
-
-        await db.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-        return atm.ToDetails();
-    }
+    private Task<AtmDetailsDto> MutateAsync(Guid atmId, Func<Atm, Task> change, CancellationToken cancellationToken) =>
+        db.ChangeAtmAsync(
+            atmId,
+            async atm =>
+            {
+                await change(atm);
+                return atm.ToDetails();
+            },
+            cancellationToken);
 }

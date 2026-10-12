@@ -49,6 +49,7 @@ app.MapHealthChecks("/health");
 
 app.MapAtmEndpoints();
 app.MapWithdrawalEndpoints();
+app.MapDepositEndpoints();
 
 await app.RunAsync();
 
