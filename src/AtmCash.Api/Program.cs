@@ -53,6 +53,7 @@ app.MapWithdrawalEndpoints();
 app.MapDepositEndpoints();
 app.MapReconciliationEndpoints();
 app.MapConsistencyEndpoints();
+app.MapReportEndpoints();
 
 await app.RunAsync();
 
