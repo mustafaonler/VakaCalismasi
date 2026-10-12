@@ -5,6 +5,7 @@ using AtmCash.Domain.Reconciliations;
 using AtmCash.Domain.Withdrawals;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace AtmCash.Application.Abstractions;
 
@@ -36,6 +37,9 @@ public interface IAtmDbContext
     /// different ATMs cannot both pass the daily limit check. Always taken before the ATM lock.
     /// </summary>
     Task LockCardAsync(string cardHash, CancellationToken cancellationToken);
+
+    /// <summary>Starts a REPEATABLE READ transaction: every query in it reads the same snapshot.</summary>
+    Task<IDbContextTransaction> BeginSnapshotTransactionAsync(CancellationToken cancellationToken);
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

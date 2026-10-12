@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Data;
 using AtmCash.Application.Abstractions;
 using AtmCash.Application.Withdrawals;
 using AtmCash.Domain.Atms;
@@ -6,6 +7,7 @@ using AtmCash.Domain.Cash;
 using AtmCash.Domain.Reconciliations;
 using AtmCash.Domain.Withdrawals;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace AtmCash.Infrastructure.Persistence;
 
@@ -26,6 +28,9 @@ public sealed class AtmDbContext(DbContextOptions<AtmDbContext> options, TimePro
 
     public Task LockAtmAsync(Guid atmId, CancellationToken cancellationToken) =>
         Database.ExecuteSqlAsync($"SELECT 1 FROM atms WHERE id = {atmId} FOR UPDATE", cancellationToken);
+
+    public Task<IDbContextTransaction> BeginSnapshotTransactionAsync(CancellationToken cancellationToken) =>
+        Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
 
     public Task LockCardAsync(string cardHash, CancellationToken cancellationToken)
     {

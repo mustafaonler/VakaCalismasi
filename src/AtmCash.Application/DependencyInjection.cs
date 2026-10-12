@@ -1,4 +1,5 @@
 using AtmCash.Application.Atms;
+using AtmCash.Application.Consistency;
 using AtmCash.Application.Deposits;
 using AtmCash.Application.Reconciliations;
 using AtmCash.Application.Withdrawals;
@@ -14,6 +15,7 @@ public static class DependencyInjection
         services.AddScoped<WithdrawalService>();
         services.AddScoped<DepositService>();
         services.AddScoped<ReconciliationService>();
+        services.AddScoped<ConsistencyService>();
         return services;
     }
 }

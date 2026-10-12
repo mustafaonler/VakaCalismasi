@@ -51,6 +51,7 @@ app.MapAtmEndpoints();
 app.MapWithdrawalEndpoints();
 app.MapDepositEndpoints();
 app.MapReconciliationEndpoints();
+app.MapConsistencyEndpoints();
 
 await app.RunAsync();
 
