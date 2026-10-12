@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\AtmCash.Domain\AtmCash.Domain.csproj" />
+  </ItemGroup>
+
+</Project>
