@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using AtmCash.Api.Background;
 using AtmCash.Api.Endpoints;
 using AtmCash.Api.Errors;
 using AtmCash.Application;
@@ -14,7 +15,11 @@ var connectionString = builder.Configuration.GetConnectionString("Default")
 
 builder.Services
     .AddApplication()
-    .AddInfrastructure(connectionString);
+    .AddInfrastructure(
+        connectionString,
+        builder.Configuration["Security:CardHashSecret"]
+            ?? throw new InvalidOperationException("Security:CardHashSecret is not configured."));
+builder.Services.AddHostedService<QuoteExpiryService>();
 
 // Enums travel as the spec spells them: IN_SERVICE, RESERVATION_RELEASE, TRY ...
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -43,6 +48,7 @@ app.UseSwaggerUI(options => options.SwaggerEndpoint("/openapi/v1.json", "ATM Cas
 app.MapHealthChecks("/health");
 
 app.MapAtmEndpoints();
+app.MapWithdrawalEndpoints();
 
 await app.RunAsync();
 

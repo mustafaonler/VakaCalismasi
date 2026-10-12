@@ -1,4 +1,6 @@
+using AtmCash.Application.Withdrawals;
 using AtmCash.Domain.Atms;
+using AtmCash.Domain.Withdrawals;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 
@@ -10,6 +12,10 @@ public interface IAtmDbContext
 
     DbSet<CassetteMovement> Movements { get; }
 
+    DbSet<WithdrawalQuote> Quotes { get; }
+
+    DbSet<IdempotencyRecord> IdempotencyRecords { get; }
+
     DatabaseFacade Database { get; }
 
     /// <summary>
@@ -18,6 +24,12 @@ public interface IAtmDbContext
     /// ATM run one at a time while different ATMs proceed in parallel.
     /// </summary>
     Task LockAtmAsync(Guid atmId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Takes a transaction-scoped advisory lock on a card so that two quotes for the same card at
+    /// different ATMs cannot both pass the daily limit check. Always taken before the ATM lock.
+    /// </summary>
+    Task LockCardAsync(string cardHash, CancellationToken cancellationToken);
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

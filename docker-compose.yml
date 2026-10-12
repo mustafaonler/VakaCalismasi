@@ -20,6 +20,7 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__Default: Host=db;Port=5432;Database=atmcash;Username=atmcash;Password=atmcash
+      Security__CardHashSecret: compose-demo-card-hash-secret
     ports:
       - "8080:8080"
     depends_on:

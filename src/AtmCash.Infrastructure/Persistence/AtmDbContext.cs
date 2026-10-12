@@ -1,6 +1,9 @@
+using System.Buffers.Binary;
 using AtmCash.Application.Abstractions;
+using AtmCash.Application.Withdrawals;
 using AtmCash.Domain.Atms;
 using AtmCash.Domain.Cash;
+using AtmCash.Domain.Withdrawals;
 using Microsoft.EntityFrameworkCore;
 
 namespace AtmCash.Infrastructure.Persistence;
@@ -12,8 +15,19 @@ public sealed class AtmDbContext(DbContextOptions<AtmDbContext> options, TimePro
 
     public DbSet<CassetteMovement> Movements => Set<CassetteMovement>();
 
+    public DbSet<WithdrawalQuote> Quotes => Set<WithdrawalQuote>();
+
+    public DbSet<IdempotencyRecord> IdempotencyRecords => Set<IdempotencyRecord>();
+
     public Task LockAtmAsync(Guid atmId, CancellationToken cancellationToken) =>
         Database.ExecuteSqlAsync($"SELECT 1 FROM atms WHERE id = {atmId} FOR UPDATE", cancellationToken);
+
+    public Task LockCardAsync(string cardHash, CancellationToken cancellationToken)
+    {
+        // Advisory locks take a bigint key; the first 8 bytes of the keyed hash are uniformly distributed.
+        var key = BinaryPrimitives.ReadInt64BigEndian(Convert.FromHexString(cardHash.AsSpan(0, 16)));
+        return Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({key})", cancellationToken);
+    }
 
     public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
@@ -37,6 +51,8 @@ public sealed class AtmDbContext(DbContextOptions<AtmDbContext> options, TimePro
         configurationBuilder.Properties<CassetteKind>().HaveConversion<string>().HaveMaxLength(16);
         configurationBuilder.Properties<Currency>().HaveConversion<string>().HaveMaxLength(3);
         configurationBuilder.Properties<MovementType>().HaveConversion<string>().HaveMaxLength(32);
+        configurationBuilder.Properties<QuoteStatus>().HaveConversion<string>().HaveMaxLength(16);
+        configurationBuilder.Properties<QuoteOption>().HaveConversion<string>().HaveMaxLength(16);
     }
 
     /// <summary>Moves ledger entries raised by aggregates into the same unit of work.</summary>
