@@ -1,6 +1,7 @@
 using System.Text.Json;
 using AtmCash.Domain.Cash;
 using AtmCash.Domain.Common;
+using AtmCash.Domain.Deposits;
 
 namespace AtmCash.Domain.Atms;
 
@@ -244,6 +245,68 @@ public sealed class Atm
     }
 
     /// <summary>
+    /// Accepts a customer deposit (Part A #11, B7). Each recognised note goes to the recycling
+    /// cassette of its currency and denomination; if there is none, or it is full, the note goes to
+    /// the deposit cassette; if that is full too, the note is returned. Unrecognised notes are
+    /// returned and never touch a cassette.
+    /// </summary>
+    /// <remarks>
+    /// When two recycling cassettes match, the emptier one is filled first (mirroring withdrawals,
+    /// which drain the fuller one first). Lines are routed in request order, which only decides
+    /// which notes are returned when the deposit cassette runs out of room, not how many.
+    /// </remarks>
+    public DepositReceipt Deposit(Guid depositId, IReadOnlyList<DepositNote> notes, int unrecognisedCount)
+    {
+        ArgumentNullException.ThrowIfNull(notes);
+        EnsureInService("accept a deposit");
+        ValidateDeposit(notes, unrecognisedCount);
+
+        var placements = new List<DepositPlacement>();
+        var returned = new List<ReturnedNotes>();
+        var deposit = GetCassette(DepositSlot);
+
+        // Several lines for the same note are treated as one.
+        var lines = notes
+            .GroupBy(n => (n.Currency, n.Denomination))
+            .Select(g => new DepositNote(g.Key.Currency, g.Key.Denomination, g.Sum(n => n.Count)));
+
+        foreach (var line in lines)
+        {
+            var remaining = line.Count;
+            var targets = _cassettes
+                .Where(c => c.IsConfiguredFor(line.Currency, line.Denomination))
+                .OrderByDescending(c => c.FreeSpace)
+                .ThenBy(c => c.Slot)
+                .Append(deposit);
+
+            foreach (var cassette in targets)
+            {
+                var fits = Math.Min(remaining, cassette.FreeSpace);
+                if (fits == 0)
+                {
+                    continue;
+                }
+
+                _newMovements.Add(cassette.Add(MovementType.Deposit, line.Currency, line.Denomination, fits, depositId));
+                placements.Add(new DepositPlacement(cassette.Slot, cassette.Kind, line.Currency, line.Denomination, fits));
+                remaining -= fits;
+            }
+
+            if (remaining > 0)
+            {
+                returned.Add(new ReturnedNotes(ReturnReason.CassetteFull, line.Currency, line.Denomination, remaining));
+            }
+        }
+
+        if (unrecognisedCount > 0)
+        {
+            returned.Add(new ReturnedNotes(ReturnReason.Unrecognised, null, null, unrecognisedCount));
+        }
+
+        return new DepositReceipt(depositId, placements, returned);
+    }
+
+    /// <summary>
     /// Explicit lifecycle transition requested by an operator. Only IN_SERVICE and MAINTENANCE can be
     /// requested directly; CONFIGURED and LOADED are reached by configuring and loading.
     /// </summary>
@@ -264,7 +327,7 @@ public sealed class Atm
         }
     }
 
-    public void PutInService() =>TransitionTo(AtmStatus.InService, AtmStatus.Loaded, AtmStatus.Maintenance);
+    public void PutInService() => TransitionTo(AtmStatus.InService, AtmStatus.Loaded, AtmStatus.Maintenance);
 
     public void EnterMaintenance() => TransitionTo(AtmStatus.Maintenance, AtmStatus.InService);
 
@@ -289,6 +352,32 @@ public sealed class Atm
             throw DomainException.Conflict(
                 ErrorCodes.OperationNotAllowedInState,
                 $"Cannot {operation} while ATM {Code} is {StatusName(Status)}; allowed in: {StatusNames(allowed)}.");
+        }
+    }
+
+    private static void ValidateDeposit(IReadOnlyList<DepositNote> notes, int unrecognisedCount)
+    {
+        if (unrecognisedCount < 0)
+        {
+            throw DomainException.Validation(ErrorCodes.InvalidQuantity, "Unrecognised note count cannot be negative.");
+        }
+
+        if (notes.Any(n => n.Count <= 0))
+        {
+            throw DomainException.Validation(ErrorCodes.InvalidQuantity, "Every deposited note line must have a positive count.");
+        }
+
+        var invalid = notes.FirstOrDefault(n => !Denominations.IsValid(n.Denomination));
+        if (invalid is not null)
+        {
+            throw DomainException.Validation(
+                ErrorCodes.InvalidDenomination,
+                $"Unsupported denomination {invalid.Denomination}; allowed: {string.Join(", ", Denominations.All)}.");
+        }
+
+        if (notes.Count == 0 && unrecognisedCount == 0)
+        {
+            throw DomainException.Validation(ErrorCodes.EmptyDeposit, "A deposit must contain at least one note.");
         }
     }
 

@@ -17,6 +17,7 @@ public static class ErrorCodes
     public const string InvalidQuantity = "INVALID_QUANTITY";
     public const string InsufficientNotes = "INSUFFICIENT_NOTES";
     public const string InvalidAmount = "INVALID_AMOUNT";
+    public const string EmptyDeposit = "EMPTY_DEPOSIT";
     public const string InvalidCardNumber = "INVALID_CARD_NUMBER";
     public const string NoPayableAmount = "NO_PAYABLE_AMOUNT";
     public const string DailyLimitExceeded = "DAILY_LIMIT_EXCEEDED";
