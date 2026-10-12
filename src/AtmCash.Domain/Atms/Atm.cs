@@ -27,6 +27,7 @@ public sealed class Atm
 
     private readonly List<Cassette> _cassettes = [];
     private readonly List<CassetteMovement> _newMovements = [];
+    private readonly List<LowCashAlert> _newAlerts = [];
 
     private Atm()
     {
@@ -71,6 +72,17 @@ public sealed class Atm
         var movements = _newMovements.ToList();
         _newMovements.Clear();
         return movements;
+    }
+
+    /// <summary>Low-cash alerts raised since the aggregate was loaded; not mapped.</summary>
+    public IReadOnlyList<LowCashAlert> NewAlerts => _newAlerts;
+
+    /// <summary>Hands the pending alerts to the persistence layer (outbox) and clears them.</summary>
+    public IReadOnlyList<LowCashAlert> DequeueNewAlerts()
+    {
+        var alerts = _newAlerts.ToList();
+        _newAlerts.Clear();
+        return alerts;
     }
 
     public Cassette GetCassette(int slot) =>
@@ -166,7 +178,14 @@ public sealed class Atm
     }
 
     /// <summary>Empties the given cassettes completely (e.g. collecting the deposit cassette).</summary>
-    public void UnloadCassettes(IReadOnlyList<int> slots)
+    public void UnloadCassettes(IReadOnlyList<int> slots) =>
+        WatchLowCash(MovementType.Unload, null, () =>
+        {
+            UnloadCassettesCore(slots);
+            return true;
+        });
+
+    private void UnloadCassettesCore(IReadOnlyList<int> slots)
     {
         ArgumentNullException.ThrowIfNull(slots);
         EnsureStatus("unload cash", AtmStatus.Configured, AtmStatus.Loaded, AtmStatus.Maintenance);
@@ -191,7 +210,10 @@ public sealed class Atm
     /// uses available notes; all cassettes share one capacity, so the most available notes is the
     /// highest ratio.
     /// </summary>
-    public IReadOnlyList<NoteAllocation> ReserveNotes(Currency currency, IReadOnlyDictionary<int, int> notes, Guid quoteId)
+    public IReadOnlyList<NoteAllocation> ReserveNotes(Currency currency, IReadOnlyDictionary<int, int> notes, Guid quoteId) =>
+        WatchLowCash(MovementType.Reservation, quoteId, () => ReserveNotesCore(currency, notes, quoteId));
+
+    private List<NoteAllocation> ReserveNotesCore(Currency currency, IReadOnlyDictionary<int, int> notes, Guid quoteId)
     {
         ArgumentNullException.ThrowIfNull(notes);
         EnsureInService("request a withdrawal");
@@ -348,7 +370,10 @@ public sealed class Atm
     /// difference as a RECONCILIATION_ADJUSTMENT movement, so the system matches the cash (Part A #8).
     /// </summary>
     /// <returns>One comparison per holding that was expected or counted, including unchanged ones.</returns>
-    public IReadOnlyList<CountComparison> Reconcile(Guid reconciliationId, IReadOnlyList<CassetteCount> counts)
+    public IReadOnlyList<CountComparison> Reconcile(Guid reconciliationId, IReadOnlyList<CassetteCount> counts) =>
+        WatchLowCash(MovementType.ReconciliationAdjustment, reconciliationId, () => ReconcileCore(reconciliationId, counts));
+
+    private List<CountComparison> ReconcileCore(Guid reconciliationId, IReadOnlyList<CassetteCount> counts)
     {
         ArgumentNullException.ThrowIfNull(counts);
         EnsureStatus("reconcile", AtmStatus.Maintenance);
@@ -518,6 +543,33 @@ public sealed class Atm
         {
             throw DomainException.Validation(ErrorCodes.EmptyDeposit, "A deposit must contain at least one note.");
         }
+    }
+
+    /// <summary>
+    /// Runs an operation that can lower available notes and raises a <see cref="LowCashAlert"/> for
+    /// each recycling cassette that crosses below the threshold. Comparing before and after the whole
+    /// operation (not per movement) matters: confirming a withdrawal releases and then removes the
+    /// same notes, which must not look like a fresh drop.
+    /// </summary>
+    private T WatchLowCash<T>(MovementType trigger, Guid? correlationId, Func<T> operation)
+    {
+        var before = _cassettes
+            .Where(c => c.Kind == CassetteKind.Recycling)
+            .ToDictionary(c => c.Slot, c => c.Available);
+
+        var result = operation();
+
+        foreach (var cassette in _cassettes.Where(c => before.ContainsKey(c.Slot)))
+        {
+            if (before[cassette.Slot] >= Cassette.LowCashThreshold && cassette.IsLowOnCash)
+            {
+                _newAlerts.Add(new LowCashAlert(
+                    Id, Code, cassette.Slot, cassette.Currency!.Value, cassette.Denomination!.Value,
+                    cassette.Available, Cassette.LowCashThreshold, trigger, correlationId));
+            }
+        }
+
+        return result;
     }
 
     private IEnumerable<Cassette> RecyclingCassettes(Currency currency) =>

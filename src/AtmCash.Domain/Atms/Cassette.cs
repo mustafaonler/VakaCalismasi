@@ -11,6 +11,9 @@ public sealed class Cassette
 {
     public const int Capacity = 100;
 
+    /// <summary>A recycling cassette with fewer available notes than this (10% of capacity) is low on cash.</summary>
+    public const int LowCashThreshold = Capacity / 10;
+
     private readonly List<CassetteHolding> _holdings = [];
 
     private Cassette()
@@ -53,6 +56,8 @@ public sealed class Cassette
     public int FreeSpace => Capacity - Count;
 
     public bool IsEmpty => Count == 0;
+
+    public bool IsLowOnCash => Kind == CassetteKind.Recycling && Available < LowCashThreshold;
 
     public bool IsConfiguredFor(Currency currency, int denomination) =>
         Kind == CassetteKind.Recycling && Currency == currency && Denomination == denomination;
