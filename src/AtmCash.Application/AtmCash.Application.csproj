@@ -4,4 +4,8 @@
     <ProjectReference Include="..\AtmCash.Domain\AtmCash.Domain.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+  </ItemGroup>
+
 </Project>

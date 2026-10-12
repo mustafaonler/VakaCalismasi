@@ -57,6 +57,14 @@ public sealed class Atm
         return new Atm(code.Trim());
     }
 
+    /// <summary>Hands the pending movements to the persistence layer and clears them.</summary>
+    public IReadOnlyList<CassetteMovement> DequeueNewMovements()
+    {
+        var movements = _newMovements.ToList();
+        _newMovements.Clear();
+        return movements;
+    }
+
     public Cassette GetCassette(int slot) =>
         _cassettes.SingleOrDefault(c => c.Slot == slot)
         ?? throw DomainException.NotFound(ErrorCodes.CassetteNotFound, $"ATM {Code} has no cassette in slot {slot}.");
@@ -160,7 +168,28 @@ public sealed class Atm
         }
     }
 
-    public void PutInService() => TransitionTo(AtmStatus.InService, AtmStatus.Loaded, AtmStatus.Maintenance);
+    /// <summary>
+    /// Explicit lifecycle transition requested by an operator. Only IN_SERVICE and MAINTENANCE can be
+    /// requested directly; CONFIGURED and LOADED are reached by configuring and loading.
+    /// </summary>
+    public void ChangeStatus(AtmStatus target)
+    {
+        switch (target)
+        {
+            case AtmStatus.InService:
+                PutInService();
+                break;
+            case AtmStatus.Maintenance:
+                EnterMaintenance();
+                break;
+            default:
+                throw DomainException.Conflict(
+                    ErrorCodes.InvalidStateTransition,
+                    $"{StatusName(target)} cannot be requested directly; it is reached by configuring or loading the ATM.");
+        }
+    }
+
+    public void PutInService() =>TransitionTo(AtmStatus.InService, AtmStatus.Loaded, AtmStatus.Maintenance);
 
     public void EnterMaintenance() => TransitionTo(AtmStatus.Maintenance, AtmStatus.InService);
 
