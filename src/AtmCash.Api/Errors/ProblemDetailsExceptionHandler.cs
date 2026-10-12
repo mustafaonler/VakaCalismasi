@@ -54,6 +54,7 @@ internal sealed partial class ProblemDetailsExceptionHandler(
         ErrorKind.Validation => StatusCodes.Status400BadRequest,
         ErrorKind.NotFound => StatusCodes.Status404NotFound,
         ErrorKind.Conflict => StatusCodes.Status409Conflict,
+        ErrorKind.Forbidden => StatusCodes.Status403Forbidden,
         _ => StatusCodes.Status500InternalServerError,
     };
 
@@ -62,6 +63,7 @@ internal sealed partial class ProblemDetailsExceptionHandler(
         ErrorKind.Validation => "Validation failed",
         ErrorKind.NotFound => "Resource not found",
         ErrorKind.Conflict => "Request conflicts with current state",
+        ErrorKind.Forbidden => "Action not allowed for this user",
         _ => "Unexpected error",
     };
 }

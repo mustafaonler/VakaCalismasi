@@ -2,6 +2,7 @@ using System.Text.Json;
 using AtmCash.Domain.Cash;
 using AtmCash.Domain.Common;
 using AtmCash.Domain.Deposits;
+using AtmCash.Domain.Reconciliations;
 
 namespace AtmCash.Domain.Atms;
 
@@ -47,6 +48,9 @@ public sealed class Atm
     public AtmStatus Status { get; private set; }
 
     public IReadOnlyList<Cassette> Cassettes => _cassettes;
+
+    /// <summary>A reconciliation whose differences need four-eyes approval; blocks returning to service (B9).</summary>
+    public Guid? PendingReconciliationId { get; private set; }
 
     /// <summary>Movements produced since the aggregate was loaded; not mapped.</summary>
     public IReadOnlyList<CassetteMovement> NewMovements => _newMovements;
@@ -327,7 +331,73 @@ public sealed class Atm
         }
     }
 
-    public void PutInService() => TransitionTo(AtmStatus.InService, AtmStatus.Loaded, AtmStatus.Maintenance);
+    public void PutInService()
+    {
+        if (PendingReconciliationId is { } pending)
+        {
+            throw DomainException.Conflict(
+                ErrorCodes.ReconciliationAwaitingApproval,
+                $"ATM {Code} cannot go into service until reconciliation {pending} is approved by a second user.");
+        }
+
+        TransitionTo(AtmStatus.InService, AtmStatus.Loaded, AtmStatus.Maintenance);
+    }
+
+    /// <summary>
+    /// Compares the physical count of every cassette with the system figures and books each
+    /// difference as a RECONCILIATION_ADJUSTMENT movement, so the system matches the cash (Part A #8).
+    /// </summary>
+    /// <returns>One comparison per holding that was expected or counted, including unchanged ones.</returns>
+    public IReadOnlyList<CountComparison> Reconcile(Guid reconciliationId, IReadOnlyList<CassetteCount> counts)
+    {
+        ArgumentNullException.ThrowIfNull(counts);
+        EnsureStatus("reconcile", AtmStatus.Maintenance);
+        if (PendingReconciliationId is { } pending)
+        {
+            throw DomainException.Conflict(
+                ErrorCodes.ReconciliationAwaitingApproval,
+                $"Reconciliation {pending} is still awaiting approval; approve it before counting again.");
+        }
+
+        var countedBySlot = ValidateCounts(counts);
+        var comparisons = new List<CountComparison>();
+        foreach (var cassette in _cassettes.OrderBy(c => c.Slot))
+        {
+            var expected = cassette.Holdings.ToDictionary(h => (h.Currency, h.Denomination), h => h.Count);
+            var counted = countedBySlot[cassette.Slot];
+            comparisons.AddRange(expected.Keys
+                .Union(counted.Keys)
+                .Select(k => new CountComparison(
+                    cassette.Slot, k.Currency, k.Denomination, expected.GetValueOrDefault(k), counted.GetValueOrDefault(k)))
+                .Where(c => c.Expected > 0 || c.Counted > 0 || cassette.Kind == CassetteKind.Recycling)
+                .OrderBy(c => c.Currency).ThenByDescending(c => c.Denomination));
+        }
+
+        // Shortages first, so a cassette never exceeds its capacity halfway through the adjustment.
+        foreach (var c in comparisons.Where(c => c.Counted < c.Expected))
+        {
+            _newMovements.Add(GetCassette(c.Slot).Remove(
+                MovementType.ReconciliationAdjustment, c.Currency, c.Denomination, c.Expected - c.Counted, reconciliationId));
+        }
+
+        foreach (var c in comparisons.Where(c => c.Counted > c.Expected))
+        {
+            _newMovements.Add(GetCassette(c.Slot).Add(
+                MovementType.ReconciliationAdjustment, c.Currency, c.Denomination, c.Counted - c.Expected, reconciliationId));
+        }
+
+        return comparisons;
+    }
+
+    internal void RequireReconciliationApproval(Guid reconciliationId) => PendingReconciliationId = reconciliationId;
+
+    internal void ClearReconciliationApproval(Guid reconciliationId)
+    {
+        if (PendingReconciliationId == reconciliationId)
+        {
+            PendingReconciliationId = null;
+        }
+    }
 
     public void EnterMaintenance() => TransitionTo(AtmStatus.Maintenance, AtmStatus.InService);
 
@@ -353,6 +423,75 @@ public sealed class Atm
                 ErrorCodes.OperationNotAllowedInState,
                 $"Cannot {operation} while ATM {Code} is {StatusName(Status)}; allowed in: {StatusNames(allowed)}.");
         }
+    }
+
+    /// <summary>Every cassette must be counted exactly once, in the shape its kind requires.</summary>
+    private Dictionary<int, Dictionary<(Currency Currency, int Denomination), int>> ValidateCounts(IReadOnlyList<CassetteCount> counts)
+    {
+        static DomainException Invalid(string message) =>
+            DomainException.Validation(ErrorCodes.InvalidReconciliationCount, message);
+
+        var duplicate = counts.GroupBy(c => c.Slot).FirstOrDefault(g => g.Count() > 1);
+        if (duplicate is not null)
+        {
+            throw Invalid($"Cassette {duplicate.Key} is counted more than once.");
+        }
+
+        var missing = _cassettes.Select(c => c.Slot).Except(counts.Select(c => c.Slot)).ToList();
+        if (missing.Count > 0)
+        {
+            throw Invalid($"Every cassette must be counted; missing: {string.Join(", ", missing)}.");
+        }
+
+        var result = new Dictionary<int, Dictionary<(Currency, int), int>>();
+        foreach (var count in counts)
+        {
+            var cassette = _cassettes.SingleOrDefault(c => c.Slot == count.Slot)
+                ?? throw Invalid($"ATM {Code} has no cassette in slot {count.Slot}.");
+
+            List<CountedNote> notes;
+            if (cassette.Kind == CassetteKind.Recycling)
+            {
+                if (count.Count is not { } n || count.Notes is { Count: > 0 })
+                {
+                    throw Invalid($"Recycling cassette {count.Slot} takes a single 'count'.");
+                }
+
+                notes = [new CountedNote(cassette.Currency!.Value, cassette.Denomination!.Value, n)];
+            }
+            else
+            {
+                if (count.Notes is null || count.Count is not null)
+                {
+                    throw Invalid($"Deposit cassette {count.Slot} takes a 'notes' list (empty if the cassette is empty).");
+                }
+
+                notes = count.Notes.ToList();
+            }
+
+            if (notes.Any(n => n.Count < 0))
+            {
+                throw Invalid($"Counts in cassette {count.Slot} cannot be negative.");
+            }
+
+            var invalid = notes.FirstOrDefault(n => !Denominations.IsValid(n.Denomination));
+            if (invalid is not null)
+            {
+                throw DomainException.Validation(ErrorCodes.InvalidDenomination, $"Unsupported denomination {invalid.Denomination}.");
+            }
+
+            var merged = notes
+                .GroupBy(n => (n.Currency, n.Denomination))
+                .ToDictionary(g => g.Key, g => g.Sum(n => n.Count));
+            if (merged.Values.Sum() > Cassette.Capacity)
+            {
+                throw Invalid($"Cassette {count.Slot} cannot hold more than {Cassette.Capacity} notes.");
+            }
+
+            result[count.Slot] = merged;
+        }
+
+        return result;
     }
 
     private static void ValidateDeposit(IReadOnlyList<DepositNote> notes, int unrecognisedCount)

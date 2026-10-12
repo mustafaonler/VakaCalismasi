@@ -29,4 +29,10 @@ public static class ErrorCodes
     public const string QuoteOptionNotOffered = "QUOTE_OPTION_NOT_OFFERED";
     public const string IdempotencyKeyRequired = "IDEMPOTENCY_KEY_REQUIRED";
     public const string IdempotencyKeyReused = "IDEMPOTENCY_KEY_REUSED";
+    public const string UserRequired = "USER_REQUIRED";
+    public const string InvalidReconciliationCount = "INVALID_RECONCILIATION_COUNT";
+    public const string ReconciliationNotFound = "RECONCILIATION_NOT_FOUND";
+    public const string ReconciliationAwaitingApproval = "RECONCILIATION_AWAITING_APPROVAL";
+    public const string ReconciliationNotAwaitingApproval = "RECONCILIATION_NOT_AWAITING_APPROVAL";
+    public const string SameUserApproval = "SAME_USER_APPROVAL";
 }
