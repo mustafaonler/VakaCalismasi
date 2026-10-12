@@ -355,4 +355,4 @@ Points the assignment leaves open, and how they were decided:
 ## AI usage
 
 ## AI usage
-This project was developed with the assistance of AI tools for generating boilerplate code, writing automated tests, and refining the documentation. All architectural decisions, business logic implementations, and final code reviews were carefully examined and confirmed by the developer.
+This project was developed with the assistance of AI tools (specifically Claude and Gemini) for generating boilerplate code, writing automated tests, and refining the documentation. All architectural decisions, business logic implementations, and final code reviews were carefully examined and confirmed by the developer.
