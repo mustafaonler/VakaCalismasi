@@ -111,6 +111,44 @@ public sealed class Cassette
         return Movement(type, currency, denomination, -quantity, correlationId);
     }
 
+    /// <summary>Earmarks notes of a recycling cassette for a withdrawal quote.</summary>
+    internal CassetteMovement Reserve(int quantity, Guid quoteId)
+    {
+        EnsurePositive(quantity);
+        var holding = ConfiguredHolding();
+        if (holding is null || holding.Available < quantity)
+        {
+            throw DomainException.Conflict(
+                ErrorCodes.InsufficientNotes,
+                $"Cassette {Slot} has {holding?.Available ?? 0} available notes, cannot reserve {quantity}.");
+        }
+
+        holding.Reserved += quantity;
+        return Movement(MovementType.Reservation, holding.Currency, holding.Denomination, quantity, quoteId);
+    }
+
+    internal CassetteMovement ReleaseReservation(int quantity, Guid quoteId)
+    {
+        EnsurePositive(quantity);
+        var holding = ConfiguredHolding();
+        if (holding is null || holding.Reserved < quantity)
+        {
+            throw new InvalidOperationException($"Cassette {Slot} has fewer than {quantity} reserved notes.");
+        }
+
+        holding.Reserved -= quantity;
+        return Movement(MovementType.ReservationRelease, holding.Currency, holding.Denomination, -quantity, quoteId);
+    }
+
+    /// <summary>Pays out reserved notes: the reservation is released and the notes leave the cassette.</summary>
+    internal IReadOnlyList<CassetteMovement> Dispense(int quantity, Guid quoteId)
+    {
+        var release = ReleaseReservation(quantity, quoteId);
+        var holding = ConfiguredHolding()!;
+        holding.Count -= quantity;
+        return [release, Movement(MovementType.Withdrawal, holding.Currency, holding.Denomination, -quantity, quoteId)];
+    }
+
     /// <summary>Removes every unreserved note from the cassette, one movement per holding.</summary>
     internal List<CassetteMovement> RemoveAll(MovementType type, Guid? correlationId = null) =>
         _holdings
@@ -130,6 +168,9 @@ public sealed class Cassette
 
         return holding;
     }
+
+    private CassetteHolding? ConfiguredHolding() =>
+        Kind == CassetteKind.Recycling ? FindHolding(Currency!.Value, Denomination!.Value) : null;
 
     private CassetteHolding? FindHolding(Currency currency, int denomination) =>
         _holdings.SingleOrDefault(h => h.Currency == currency && h.Denomination == denomination);

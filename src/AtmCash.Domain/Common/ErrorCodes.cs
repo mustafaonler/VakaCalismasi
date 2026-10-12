@@ -16,4 +16,16 @@ public static class ErrorCodes
     public const string DepositCassetteNotLoadable = "DEPOSIT_CASSETTE_NOT_LOADABLE";
     public const string InvalidQuantity = "INVALID_QUANTITY";
     public const string InsufficientNotes = "INSUFFICIENT_NOTES";
+    public const string InvalidAmount = "INVALID_AMOUNT";
+    public const string InvalidCardNumber = "INVALID_CARD_NUMBER";
+    public const string NoPayableAmount = "NO_PAYABLE_AMOUNT";
+    public const string DailyLimitExceeded = "DAILY_LIMIT_EXCEEDED";
+    public const string QuoteNotFound = "QUOTE_NOT_FOUND";
+    public const string QuoteExpired = "QUOTE_EXPIRED";
+    public const string QuoteCancelled = "QUOTE_CANCELLED";
+    public const string QuoteAlreadyConfirmed = "QUOTE_ALREADY_CONFIRMED";
+    public const string QuoteOptionRequired = "QUOTE_OPTION_REQUIRED";
+    public const string QuoteOptionNotOffered = "QUOTE_OPTION_NOT_OFFERED";
+    public const string IdempotencyKeyRequired = "IDEMPOTENCY_KEY_REQUIRED";
+    public const string IdempotencyKeyReused = "IDEMPOTENCY_KEY_REUSED";
 }

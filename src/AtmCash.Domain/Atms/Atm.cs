@@ -8,6 +8,9 @@ public sealed record RecyclingCassetteSpec(Currency Currency, int Denomination);
 
 public sealed record CassetteLoad(int Slot, int Quantity);
 
+/// <summary>A number of notes of one denomination taken from (or reserved in) one cassette.</summary>
+public sealed record NoteAllocation(int Slot, int Denomination, int Quantity);
+
 /// <summary>
 /// Aggregate root: an ATM, its five cassettes and its lifecycle (B2). All cash changes go
 /// through this class; the movements they produce are collected in <see cref="NewMovements"/>
@@ -168,6 +171,78 @@ public sealed class Atm
         }
     }
 
+    /// <summary>Withdrawals and deposits are only possible while the ATM is in service.</summary>
+    public void EnsureInService(string operation) => EnsureStatus(operation, AtmStatus.InService);
+
+    /// <summary>Unreserved notes per denomination across the recycling cassettes of a currency.</summary>
+    public IReadOnlyDictionary<int, int> AvailableNotes(Currency currency) =>
+        RecyclingCassettes(currency)
+            .GroupBy(c => c.Denomination!.Value)
+            .ToDictionary(g => g.Key, g => g.Sum(c => c.Available));
+
+    /// <summary>
+    /// Reserves notes for a quote. When two cassettes hold the same denomination, the one with the
+    /// higher fill ratio is drawn from first (B2). Reserved notes are already spoken for, so the ratio
+    /// uses available notes; all cassettes share one capacity, so the most available notes is the
+    /// highest ratio.
+    /// </summary>
+    public IReadOnlyList<NoteAllocation> ReserveNotes(Currency currency, IReadOnlyDictionary<int, int> notes, Guid quoteId)
+    {
+        ArgumentNullException.ThrowIfNull(notes);
+        EnsureInService("request a withdrawal");
+
+        var allocations = new List<NoteAllocation>();
+        foreach (var (denomination, count) in notes.Where(n => n.Value > 0))
+        {
+            var remaining = count;
+            var cassettes = RecyclingCassettes(currency)
+                .Where(c => c.Denomination == denomination)
+                .OrderByDescending(c => c.Available)
+                .ThenBy(c => c.Slot);
+            foreach (var cassette in cassettes)
+            {
+                var take = Math.Min(remaining, cassette.Available);
+                if (take == 0)
+                {
+                    continue;
+                }
+
+                _newMovements.Add(cassette.Reserve(take, quoteId));
+                allocations.Add(new NoteAllocation(cassette.Slot, denomination, take));
+                remaining -= take;
+            }
+
+            if (remaining > 0)
+            {
+                throw DomainException.Conflict(
+                    ErrorCodes.InsufficientNotes, $"Not enough {currency} {denomination} notes to reserve {count}.");
+            }
+        }
+
+        return allocations;
+    }
+
+    /// <summary>Gives reserved notes back to the available pool (cancel, expiry, unchosen alternative).</summary>
+    public void ReleaseReservations(IEnumerable<NoteAllocation> allocations, Guid quoteId)
+    {
+        ArgumentNullException.ThrowIfNull(allocations);
+        foreach (var allocation in allocations.Where(a => a.Quantity > 0))
+        {
+            _newMovements.Add(GetCassette(allocation.Slot).ReleaseReservation(allocation.Quantity, quoteId));
+        }
+    }
+
+    /// <summary>Pays out previously reserved notes.</summary>
+    public void Dispense(IEnumerable<NoteAllocation> allocations, Guid quoteId)
+    {
+        ArgumentNullException.ThrowIfNull(allocations);
+        EnsureInService("dispense cash");
+        foreach (var allocation in allocations.Where(a => a.Quantity > 0))
+        {
+            _newMovements.AddRange(GetCassette(allocation.Slot).Dispense(allocation.Quantity, quoteId));
+        }
+    }
+
     /// <summary>
     /// Explicit lifecycle transition requested by an operator. Only IN_SERVICE and MAINTENANCE can be
     /// requested directly; CONFIGURED and LOADED are reached by configuring and loading.
@@ -216,6 +291,9 @@ public sealed class Atm
                 $"Cannot {operation} while ATM {Code} is {StatusName(Status)}; allowed in: {StatusNames(allowed)}.");
         }
     }
+
+    private IEnumerable<Cassette> RecyclingCassettes(Currency currency) =>
+        _cassettes.Where(c => c.Kind == CassetteKind.Recycling && c.Currency == currency);
 
     private static string StatusNames(AtmStatus[] statuses) => string.Join(", ", statuses.Select(StatusName));
 }
