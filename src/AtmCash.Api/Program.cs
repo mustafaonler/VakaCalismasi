@@ -20,6 +20,7 @@ builder.Services
         builder.Configuration["Security:CardHashSecret"]
             ?? throw new InvalidOperationException("Security:CardHashSecret is not configured."));
 builder.Services.AddHostedService<QuoteExpiryService>();
+builder.Services.AddHostedService<OutboxPublisherService>();
 
 // Enums travel as the spec spells them: IN_SERVICE, RESERVATION_RELEASE, TRY ...
 builder.Services.ConfigureHttpJsonOptions(options =>

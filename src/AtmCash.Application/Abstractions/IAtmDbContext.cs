@@ -1,3 +1,4 @@
+using AtmCash.Application.Outbox;
 using AtmCash.Application.Withdrawals;
 using AtmCash.Domain.Atms;
 using AtmCash.Domain.Cash;
@@ -23,6 +24,8 @@ public interface IAtmDbContext
 
     DbSet<ExchangeRate> ExchangeRates { get; }
 
+    DbSet<OutboxMessage> OutboxMessages { get; }
+
     DatabaseFacade Database { get; }
 
     /// <summary>
@@ -40,6 +43,12 @@ public interface IAtmDbContext
 
     /// <summary>Starts a REPEATABLE READ transaction: every query in it reads the same snapshot.</summary>
     Task<IDbContextTransaction> BeginSnapshotTransactionAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Locks up to <paramref name="max"/> unprocessed outbox messages, oldest first, for the current
+    /// transaction. SKIP LOCKED lets several workers run without picking the same message.
+    /// </summary>
+    Task<List<OutboxMessage>> LockPendingOutboxMessagesAsync(int max, CancellationToken cancellationToken);
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

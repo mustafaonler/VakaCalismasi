@@ -14,6 +14,7 @@ internal sealed class AtmConfiguration : IEntityTypeConfiguration<Atm>
         builder.Property(a => a.Code).HasMaxLength(64);
         builder.HasIndex(a => a.Code).IsUnique();
         builder.Ignore(a => a.NewMovements);
+        builder.Ignore(a => a.NewAlerts);
 
         builder.HasMany(a => a.Cassettes)
             .WithOne()

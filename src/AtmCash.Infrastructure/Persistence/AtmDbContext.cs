@@ -1,6 +1,9 @@
 using System.Buffers.Binary;
 using System.Data;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using AtmCash.Application.Abstractions;
+using AtmCash.Application.Outbox;
 using AtmCash.Application.Withdrawals;
 using AtmCash.Domain.Atms;
 using AtmCash.Domain.Cash;
@@ -14,6 +17,11 @@ namespace AtmCash.Infrastructure.Persistence;
 public sealed class AtmDbContext(DbContextOptions<AtmDbContext> options, TimeProvider timeProvider)
     : DbContext(options), IAtmDbContext
 {
+    private static readonly JsonSerializerOptions PayloadJson = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseUpper) },
+    };
+
     public DbSet<Atm> Atms => Set<Atm>();
 
     public DbSet<CassetteMovement> Movements => Set<CassetteMovement>();
@@ -26,11 +34,18 @@ public sealed class AtmDbContext(DbContextOptions<AtmDbContext> options, TimePro
 
     public DbSet<ExchangeRate> ExchangeRates => Set<ExchangeRate>();
 
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+
     public Task LockAtmAsync(Guid atmId, CancellationToken cancellationToken) =>
         Database.ExecuteSqlAsync($"SELECT 1 FROM atms WHERE id = {atmId} FOR UPDATE", cancellationToken);
 
     public Task<IDbContextTransaction> BeginSnapshotTransactionAsync(CancellationToken cancellationToken) =>
         Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, cancellationToken);
+
+    public Task<List<OutboxMessage>> LockPendingOutboxMessagesAsync(int max, CancellationToken cancellationToken) =>
+        OutboxMessages
+            .FromSql($"SELECT * FROM outbox_messages WHERE processed_at IS NULL ORDER BY occurred_at LIMIT {max} FOR UPDATE SKIP LOCKED")
+            .ToListAsync(cancellationToken);
 
     public Task LockCardAsync(string cardHash, CancellationToken cancellationToken)
     {
@@ -66,7 +81,10 @@ public sealed class AtmDbContext(DbContextOptions<AtmDbContext> options, TimePro
         configurationBuilder.Properties<ReconciliationStatus>().HaveConversion<string>().HaveMaxLength(32);
     }
 
-    /// <summary>Moves ledger entries raised by aggregates into the same unit of work.</summary>
+    /// <summary>
+    /// Moves ledger entries and alerts raised by aggregates into the same unit of work, so they are
+    /// committed (or rolled back) together with the balance change that produced them.
+    /// </summary>
     private void CollectDomainRecords()
     {
         var now = timeProvider.GetUtcNow();
@@ -76,6 +94,11 @@ public sealed class AtmDbContext(DbContextOptions<AtmDbContext> options, TimePro
             {
                 var entry = Movements.Add(movement);
                 entry.Property(m => m.CreatedAt).CurrentValue = now;
+            }
+
+            foreach (var alert in atm.DequeueNewAlerts())
+            {
+                OutboxMessages.Add(new OutboxMessage(nameof(LowCashAlert), JsonSerializer.Serialize(alert, PayloadJson), now));
             }
         }
     }
